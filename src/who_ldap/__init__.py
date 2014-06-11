@@ -16,7 +16,6 @@
 LDAP plugins for repoze.who v2 API
 """
 
-from base64 import b64encode, b64decode
 try:  # pragma: nocover
     from urllib.parse import urlparse  # Python 3
 except ImportError:  # pragma: nocover
@@ -65,16 +64,12 @@ def parse_map(str):
 
 
 def extract_userdata(identity):
-    match = RE_USERDATA.search(identity.get('userdata', ''))
-    if not match:
-        return None
-    return b64decode(match.group('b64dn'))
+    return identity.get('userdata', {}).get('dn')
 
 
 def save_userdata(identity, dn):
-    userdata = identity.get('userdata') or ''
-    encoded = '<dn:%s>' % b64encode(dn.encode('utf-8'))
-    identity['userdata'] = userdata + encoded
+    userdata = identity.setdefault('userdata', {})
+    userdata['dn'] = dn
 
 
 @implementer(IAuthenticator)
@@ -226,8 +221,6 @@ class LDAPAttributesPlugin(object):
     Loads LDAP attributes of the authenticated user.
     """
 
-    dnrx = re.compile('<dn:(?P<b64dn>[A-Za-z0-9+/]+=*)>')
-
     def __init__(self,
                  url,
                  bind_dn='',
@@ -293,8 +286,8 @@ class LDAPAttributesPlugin(object):
                                              else self.attributes))
 
             if not status:
-                logger.error('Cannot add metadata for %s: %s'
-                                % (dn, conn.result))
+                logger.error(
+                    'Cannot add metadata for %s: %s' % (dn, conn.result))
                 return None
 
             result = {}
@@ -314,8 +307,6 @@ class LDAPGroupsPlugin(object):
     """
     Add LDAP group memberships of the authenticated user to the identity.
     """
-
-    dnrx = re.compile('<dn:(?P<b64dn>[A-Za-z0-9+/]+=*)>')
 
     def __init__(self,
                  url,
@@ -371,7 +362,7 @@ class LDAPGroupsPlugin(object):
     # IMetadataProvider
     def add_metadata(self, environ, identity):
         logger = logging.getLogger('repoze.who')
-        
+
         with make_connection(self.url, self.bind_dn, self.bind_pass) as conn:
             if self.start_tls:
                 conn.start_tls()
@@ -387,8 +378,8 @@ class LDAPGroupsPlugin(object):
                                  attributes=[self.returned_id])
 
             if not status:
-                logger.error('Cannot add metadata for %s: %s'
-                                % (dn, conn.result))
+                logger.error(
+                    'Cannot add metadata for %s: %s' % (dn, conn.result))
                 return None
 
             groups = tuple(r['attributes'][self.returned_id][0]
